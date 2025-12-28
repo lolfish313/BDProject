@@ -5,17 +5,26 @@ from langgraph.graph import StateGraph, END
 from typing_extensions import TypedDict
 from typing import List, Dict, Any
 from datetime import datetime
+from search.boChaSearch import bocha_websearch_tool
 
 # 添加父目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ChatOpenAI import ChatOpenAIModel
 
+model_name = "deepseek-chat"
 # 初始化LLM
-llm = ChatOpenAIModel.chatOpenAI(model="deepseek-chat",
+llm = ChatOpenAIModel.chatOpenAI(model=model_name,
                                  base_url="https://api.deepseek.com",
                                  api_key='sk-762ca3eceebf48c1984a178a969d2580')
+llm.bind_tools([bocha_websearch_tool],tool_choice={"type": "function", "function": {"name": "bocha_websearch_tool"}})
 
-
+def checkIfUseTools(response):
+    # 检查是否调用了工具
+    if response.tool_calls:
+        print("模型要求调用工具!")
+        for tool_call in response.tool_calls:
+            print(f"工具名: {tool_call['name']}")
+            print(f"参数: {tool_call['args']}")
 # 定义状态类型
 class BDAnalysisState(TypedDict):
     user_input: str
@@ -34,7 +43,7 @@ class BDAnalysisState(TypedDict):
 def info_integrator(state: BDAnalysisState) -> BDAnalysisState:
     """基础信息整合专员：解析用户输入为结构化信息"""
     prompt = f"""
-    你是一位专业的创新药BD基础信息整合专员。请根据用户输入，提取并结构化以下信息：
+    你是一位专业的创新药BD基础信息整合专员。请根据用户输入，提取并结构化以下信息，必须使用提供的搜索工具“bocha_websearch_tool”进行信息准确性校验：
 
     用户输入：{state['user_input']}
 
@@ -56,6 +65,8 @@ def info_integrator(state: BDAnalysisState) -> BDAnalysisState:
     """
 
     response = llm.invoke(prompt)
+    checkIfUseTools(response)
+    print(response.content)
     # 解析JSON响应并存储到状态中
     try:
         import json
@@ -175,7 +186,6 @@ def risk_checker_market(state: BDAnalysisState) -> BDAnalysisState:
 
     报告无需署名
     """
-
     response = llm.invoke(prompt)
     return {**state, "risk_check_market": response.content}
 
@@ -419,6 +429,23 @@ def create_bd_analysis_agent():
 
     return workflow.compile()
 
+def create_bd_analysis_agent_test():
+    workflow = StateGraph(BDAnalysisState)
+
+    # 添加节点
+    workflow.add_node("info_integrator", info_integrator)
+    workflow.add_node("save_markdown", save_to_markdown)
+
+    # 设置工作流路径
+    workflow.set_entry_point("info_integrator")
+
+    # 基础流程
+    workflow.add_edge("info_integrator", "save_markdown")
+    workflow.add_edge("save_markdown", END)
+
+    return workflow.compile()
+
+
 # 主函数：运行BD分析助手
 def run_bd_analysis(user_input: str):
     """运行BD分析助手的主函数"""
@@ -438,7 +465,7 @@ def run_bd_analysis(user_input: str):
     )
 
     # 创建并运行工作流
-    bd_agent = create_bd_analysis_agent()
+    bd_agent = create_bd_analysis_agent_test()
     result = bd_agent.invoke(initial_state)
 
     return result
@@ -446,7 +473,7 @@ def run_bd_analysis(user_input: str):
 # 示例使用
 if __name__ == "__main__":
     # 示例查询
-    sample_query = "分析科伦博泰的创新药，SKB264的BD潜力"
+    sample_query = "分析AK104的BD潜力"
 
     print("🚀 开始创新药BD潜力分析...")
     start_time = time.time()
