@@ -89,4 +89,5 @@ def execute_tool_call(tool_call):
         return f"未知工具: {function_name}"
 
 if __name__ == '__main__':
-    print(bocha_websearch_tool("AK104 宫颈癌 中国NMPA治疗获批情况"))
+    # 使用工具对象的run方法来执行搜索
+    print(bocha_websearch_tool.run({"query": "AK104 宫颈癌 中国NMPA治疗获批情况"}))
