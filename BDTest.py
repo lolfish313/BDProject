@@ -16,7 +16,7 @@ model_name = "deepseek-chat"
 llm = ChatOpenAIModel.chatOpenAI(model=model_name,
                                  base_url="https://api.deepseek.com",
                                  api_key='sk-762ca3eceebf48c1984a178a969d2580')
-llm.bind_tools([bocha_websearch_tool],tool_choice={"type": "function", "function": {"name": "bocha_websearch_tool"}})
+llm = llm.bind_tools([bocha_websearch_tool],tool_choice={"type": "function", "function": {"name": "bocha_websearch_tool"}})
 
 def checkIfUseTools(response):
     # 检查是否调用了工具
@@ -25,6 +25,12 @@ def checkIfUseTools(response):
         for tool_call in response.tool_calls:
             print(f"工具名: {tool_call['name']}")
             print(f"参数: {tool_call['args']}")
+            # 执行工具调用
+            if tool_call['name'] == 'bocha_websearch_tool':
+                tool_result = bocha_websearch_tool.run(tool_call['args'])
+                print(f"工具执行结果: {len(tool_result)}")
+                return tool_result
+    return None
 # 定义状态类型
 class BDAnalysisState(TypedDict):
     user_input: str
@@ -43,7 +49,7 @@ class BDAnalysisState(TypedDict):
 def info_integrator(state: BDAnalysisState) -> BDAnalysisState:
     """基础信息整合专员：解析用户输入为结构化信息"""
     prompt = f"""
-    你是一位专业的创新药BD基础信息整合专员。请根据用户输入，提取并结构化以下信息，必须使用提供的搜索工具“bocha_websearch_tool”进行信息准确性校验：
+    你是一位专业的创新药BD基础信息整合专员。请根据用户输入，提取并结构化以下信息：
 
     用户输入：{state['user_input']}
 
@@ -65,8 +71,12 @@ def info_integrator(state: BDAnalysisState) -> BDAnalysisState:
     """
 
     response = llm.invoke(prompt)
-    checkIfUseTools(response)
-    print(response.content)
+    tool_result = checkIfUseTools(response)
+    if tool_result:
+        # 如果有工具调用结果，将结果添加到prompt中再次请求模型
+        prompt_with_tool_result = f"{prompt}\n\n工具搜索结果:\n{tool_result}\n\n请基于以上搜索结果，重新生成JSON格式的药品信息。"
+        response = llm.invoke(prompt_with_tool_result)
+    print("大模型response : {}".format(response.content))
     # 解析JSON响应并存储到状态中
     try:
         import json
@@ -339,7 +349,7 @@ f"""# 创新药BD潜力分析报告
 
 def save_to_markdown(state: BDAnalysisState) -> BDAnalysisState:
     """保存Markdown文件"""
-    desktop_path = os.path.expanduser("~/Desktop")
+    desktop_path = os.path.expanduser("~/Desktop/BDProject/BDProject")
     filename = f"BD潜力分析_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
     filepath = os.path.join(desktop_path, filename)
 
